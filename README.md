@@ -1,3 +1,18 @@
+## Backstory
+
+This was forked both as an insurance policy against the project repeating history again. 
+Suffice it to say the team currently in control of the project seems like a real peice of work. 
+
+If you want to read about why i created this fork  it's here in the WIki 
+
+[Why I created this fork](https://github.com/decryptedchaos/input-leap/wiki)
+
+
+There is a binary installer on this repository i uploaded it simply for people to have easy access to it. 
+
+[Releases](https://github.com/decryptedchaos/input-leap/releases)
+
+
 # Input Leap
 
 <!-- add CI badges, flatpak, snap, use github actions badges or Azure? Decide on
