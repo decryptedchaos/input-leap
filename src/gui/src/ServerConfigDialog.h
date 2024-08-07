@@ -16,23 +16,26 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#if !defined(SERVERCONFIGDIALOG__H)
-
-#define SERVERCONFIGDIALOG__H
+#pragma once
 
 #include "ScreenSetupModel.h"
 #include "ServerConfig.h"
 
-#include "ui_ServerConfigDialogBase.h"
-
 #include <QDialog>
+#include <memory>
 
-class ServerConfigDialog : public QDialog, public Ui::ServerConfigDialogBase
+namespace Ui
+{
+    class ServerConfigDialog;
+}
+
+class ServerConfigDialog : public QDialog
 {
     Q_OBJECT
 
     public:
         ServerConfigDialog(QWidget* parent, ServerConfig& config, const QString& defaultScreenName);
+        ~ServerConfigDialog() override;
 
     public slots:
         void accept() override;
@@ -49,6 +52,7 @@ class ServerConfigDialog : public QDialog, public Ui::ServerConfigDialogBase
         void on_m_pListActions_itemSelectionChanged();
         void on_m_pButtonEditAction_clicked();
         void on_m_pButtonRemoveAction_clicked();
+        void on_m_pCheckBoxEnableClipboard_stateChanged(int state);
 
     protected:
         ServerConfig& serverConfig() { return m_ServerConfig; }
@@ -56,10 +60,9 @@ class ServerConfigDialog : public QDialog, public Ui::ServerConfigDialogBase
         ScreenSetupModel& model() { return m_ScreenSetupModel; }
 
     private:
+        std::unique_ptr<Ui::ServerConfigDialog> ui_;
         ServerConfig& m_OrigServerConfig;
         ServerConfig m_ServerConfig;
         ScreenSetupModel m_ScreenSetupModel;
         QString m_Message;
 };
-
-#endif

@@ -84,7 +84,7 @@ void ScreenSetupView::remove(const QModelIndex& index)
     Screen& screen = model()->screen(index);
     if (!screen.isNull()) {
         screen = Screen();
-        emit dataChanged(index, index);
+        dataChanged(index, index);
     }
 }
 
@@ -171,9 +171,13 @@ void ScreenSetupView::dragMoveEvent(QDragMoveEvent* event)
         }
         else
         {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            int col = columnAt(event->position().x());
+            int row = rowAt(event->position().y());
+#else
             int col = columnAt(event->pos().x());
             int row = rowAt(event->pos().y());
-
+#endif
             // a drop from outside is not allowed if there's a screen already there.
             if (!model()->screen(col, row).isNull())
                 event->ignore();

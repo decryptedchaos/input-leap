@@ -1,14 +1,11 @@
-cmake_minimum_required (VERSION 3.4)
 
-find_package (QT NAMES Qt6 Qt5 REQUIRED)
-find_package (Qt${QT_VERSION_MAJOR} COMPONENTS Core Widgets Network LinguistTools REQUIRED)
-# If Qt6 is in use, also link to Core5Compat
-if (Qt6_FOUND)
+find_package (Qt${QT_DEFAULT_MAJOR_VERSION} ${REQUIRED_QT_VERSION} COMPONENTS Core Widgets Network LinguistTools REQUIRED)
+
+if (QT_DEFAULT_MAJOR_VERSION EQUAL 6)
     find_package (Qt6 REQUIRED COMPONENTS Core5Compat)
 endif()
 
-message(STATUS "Using Qt" ${QT_VERSION_MAJOR})
-
+message(STATUS "Using Qt ${QT_DEFAULT_MAJOR_VERSION}")
 
 set (CMAKE_AUTOMOC ON)
 set (CMAKE_AUTORCC ON)
@@ -37,7 +34,6 @@ set(GUI_SOURCE_FILES
     src/BaseConfig.cpp
     src/CommandProcess.cpp
     src/DataDownloader.cpp
-    src/DisplayIsValid.cpp
     src/FingerprintAcceptDialog.cpp
     src/HotkeyDialog.cpp
     src/IpcClient.cpp
@@ -77,7 +73,6 @@ set(GUI_HEADER_FILES
     src/BaseConfig.h
     src/CommandProcess.h
     src/DataDownloader.h
-    src/DisplayIsValid.h
     src/ElevateMode.h
     src/HotkeyDialog.h
     src/IpcClient.h
@@ -109,17 +104,17 @@ set(GUI_HEADER_FILES
 )
 
 set(GUI_UI_FILES
-    src/AboutDialogBase.ui
-    src/ActionDialogBase.ui
-    src/AddClientDialogBase.ui
+    src/AboutDialog.ui
+    src/ActionDialog.ui
+    src/AddClientDialog.ui
     src/FingerprintAcceptDialog.ui
-    src/HotkeyDialogBase.ui
-    src/LogWindowBase.ui
-    src/MainWindowBase.ui
-    src/ScreenSettingsDialogBase.ui
-    src/ServerConfigDialogBase.ui
-    src/SettingsDialogBase.ui
-    src/SetupWizardBase.ui
+    src/HotkeyDialog.ui
+    src/LogWindow.ui
+    src/MainWindow.ui
+    src/ScreenSettingsDialog.ui
+    src/ServerConfigDialog.ui
+    src/SettingsDialog.ui
+    src/SetupWizard.ui
 )
 
 set(TS_FILES
@@ -173,7 +168,7 @@ set(TS_FILES
 )
 
 set_source_files_properties(${TS_FILES} PROPERTIES OUTPUT_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/res/lang")
-if (Qt5_FOUND)
+if (QT_DEFAULT_MAJOR_VERSION EQUAL 5)
     qt5_add_translation(QM_FILES ${TS_FILES} OPTIONS -silent)
 else()
     qt_add_translation(QM_FILES ${TS_FILES} OPTIONS -silent)
@@ -204,15 +199,15 @@ target_link_libraries(input-leap
     arch
     base
     io
-    Qt${QT_VERSION_MAJOR}::Core
-    Qt${QT_VERSION_MAJOR}::Widgets
-    Qt${QT_VERSION_MAJOR}::Network
+    Qt${QT_DEFAULT_MAJOR_VERSION}::Core
+    Qt${QT_DEFAULT_MAJOR_VERSION}::Widgets
+    Qt${QT_DEFAULT_MAJOR_VERSION}::Network
 )
 
-if (Qt6_FOUND)
-    target_link_libraries(input-leap Qt6::Core5Compat)
+if (QT_DEFAULT_MAJOR_VERSION EQUAL 6)
+    target_link_libraries(input-leap Qt::Core5Compat)
 endif()
-target_link_libraries(input-leap ${OPENSSL_LIBS})
+target_link_libraries(input-leap OpenSSL::SSL OpenSSL::Crypto)
 
 target_compile_definitions (input-leap PRIVATE -DINPUTLEAP_VERSION_STAGE="${INPUTLEAP_VERSION_STAGE}")
 target_compile_definitions (input-leap PRIVATE -DINPUTLEAP_REVISION="${INPUTLEAP_REVISION}")
@@ -239,6 +234,25 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     install(TARGETS input-leap DESTINATION ${INPUTLEAP_BUNDLE_BINARY_DIR})
 elseif (${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "BSD")
     install (TARGETS input-leap DESTINATION bin)
+elseif(WIN32)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
+    if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
+        set(CMAKE_INSTALL_DEBUG_LIBRARIES TRUE)
+    endif()
+    set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)
+    include(InstallRequiredSystemLibraries)
+    add_custom_command(
+        TARGET input-leap POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_BINARY_DIR}/qtDeploy"
+        COMMAND ${QT_DEPLOY_TOOL} --no-compiler-runtime --no-system-d3d-compiler
+            --dir "${CMAKE_BINARY_DIR}/qtDeploy" $<TARGET_FILE:input-leap>
+    )
+    install(TARGETS input-leap DESTINATION .)
+    install(
+        DIRECTORY ${CMAKE_BINARY_DIR}/qtDeploy/
+        DESTINATION .
+        FILES_MATCHING PATTERN "*.*"
+    )
 endif()
 
 if(INPUTLEAP_BUILD_TESTS)
@@ -259,5 +273,8 @@ if(INPUTLEAP_BUILD_TESTS)
              WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
     target_include_directories(guiunittests PUBLIC ../../ext)
-    target_link_libraries(guiunittests gtest gmock Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network ${libs})
+    target_link_libraries(guiunittests gtest gmock Qt${QT_DEFAULT_MAJOR_VERSION}::Core Qt${QT_DEFAULT_MAJOR_VERSION}::Widgets Qt${QT_DEFAULT_MAJOR_VERSION}::Network ${libs})
+    if (QT_DEFAULT_MAJOR_VERSION EQUAL 6)
+        target_link_libraries(guiunittests Qt::Core5Compat)
+    endif()
 endif()
