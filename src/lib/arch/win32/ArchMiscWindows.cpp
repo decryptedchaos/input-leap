@@ -140,7 +140,7 @@ ArchMiscWindows::openKey(HKEY key, const TCHAR* keyName, bool create)
                                 KEY_WRITE | KEY_QUERY_VALUE, &newKey);
     if (result != ERROR_SUCCESS && create) {
         DWORD disp;
-        result = RegCreateKeyEx(key, keyName, 0, TEXT(""),
+        result = RegCreateKeyEx(key, keyName, 0, TEXT(const_cast<char*>("")),
                                 0, KEY_WRITE | KEY_QUERY_VALUE,
                                 nullptr, &newKey, &disp);
     }
@@ -346,8 +346,7 @@ ArchMiscWindows::removeDialog(HWND hwnd)
 bool
 ArchMiscWindows::processDialog(MSG* msg)
 {
-    for (Dialogs::const_iterator index = s_dialogs->begin();
-                            index != s_dialogs->end(); ++index) {
+    for (auto index = s_dialogs->begin(); index != s_dialogs->end(); ++index) {
         if (IsDialogMessage(*index, msg)) {
             return true;
         }

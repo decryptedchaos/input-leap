@@ -289,8 +289,15 @@ XWindowsScreen::enter()
 	m_isOnScreen = true;
 }
 
-bool
-XWindowsScreen::leave()
+bool XWindowsScreen::canLeave()
+{
+    // raise and show the window, required to grab mouse and keyboard
+    m_impl->XMapRaised(m_display, m_window);
+    // see if grabbing the mouse and keyboard, if primary, is possible
+    return !(m_isPrimary && !grabMouseAndKeyboard());
+}
+
+void XWindowsScreen::leave()
 {
 	if (!m_isPrimary) {
 		// restore the previous keyboard auto-repeat state.  if the user
@@ -312,7 +319,6 @@ XWindowsScreen::leave()
 	// grab the mouse and keyboard, if primary and possible
 	if (m_isPrimary && !grabMouseAndKeyboard()) {
         m_impl->XUnmapWindow(m_display, m_window);
-		return false;
 	}
 
 	// save current focus
@@ -342,8 +348,6 @@ XWindowsScreen::leave()
 
 	// now off screen
 	m_isOnScreen = false;
-
-	return true;
 }
 
 bool
@@ -367,7 +371,7 @@ XWindowsScreen::setClipboard(ClipboardID id, const IClipboard* clipboard)
 		if (!m_clipboard[id]->open(timestamp)) {
 			return false;
 		}
-		m_clipboard[id]->empty();
+        m_clipboard[id]->clear();
 		m_clipboard[id]->close();
 		return true;
 	}
@@ -660,9 +664,7 @@ std::uint32_t XWindowsScreen::registerHotKey(KeyID key, KeyModifierMask mask)
 				toggleModifiers[numToggleModifiers++] = modifier;
 			}
 
-
-			for (XWindowsKeyState::KeycodeList::iterator j = keycodes.begin();
-									j != keycodes.end() && !err; ++j) {
+            for (auto j = keycodes.begin(); j != keycodes.end() && !err; ++j) {
 				for (size_t i = 0; i < (1u << numToggleModifiers); ++i) {
 					// add toggle modifiers for index i
 					unsigned int tmpModifiers = modifiers;
@@ -690,8 +692,7 @@ std::uint32_t XWindowsScreen::registerHotKey(KeyID key, KeyModifierMask mask)
 
 	if (err) {
 		// if any failed then unregister any we did get
-		for (HotKeyList::iterator j = hotKeys.begin();
-								j != hotKeys.end(); ++j) {
+        for (auto j = hotKeys.begin(); j != hotKeys.end(); ++j) {
             m_impl->XUngrabKey(m_display, j->first, j->second, m_root);
 			m_hotKeyToIDMap.erase(HotKeyItem(j->first, j->second));
 		}
@@ -709,7 +710,7 @@ std::uint32_t XWindowsScreen::registerHotKey(KeyID key, KeyModifierMask mask)
 void XWindowsScreen::unregisterHotKey(std::uint32_t id)
 {
 	// look up hotkey
-	HotKeyMap::iterator i = m_hotKeys.find(id);
+    auto i = m_hotKeys.find(id);
 	if (i == m_hotKeys.end()) {
 		return;
 	}
@@ -719,8 +720,7 @@ void XWindowsScreen::unregisterHotKey(std::uint32_t id)
 	{
 		XWindowsUtil::ErrorLock lock(m_display, &err);
 		HotKeyList& hotKeys = i->second;
-		for (HotKeyList::iterator j = hotKeys.begin();
-								j != hotKeys.end(); ++j) {
+        for (auto j = hotKeys.begin(); j != hotKeys.end(); ++j) {
             m_impl->XUngrabKey(m_display, j->first, j->second, m_root);
 			m_hotKeyToIDMap.erase(HotKeyItem(j->first, j->second));
 		}
@@ -1458,8 +1458,7 @@ bool
 XWindowsScreen::onHotKey(XKeyEvent& xkey, bool isRepeat)
 {
 	// find the hot key id
-	HotKeyToIDMap::const_iterator i =
-		m_hotKeyToIDMap.find(HotKeyItem(xkey.keycode, xkey.state & SCROLL_LOCK_EXCLUDE_MASK));
+    auto i = m_hotKeyToIDMap.find(HotKeyItem(xkey.keycode, xkey.state & SCROLL_LOCK_EXCLUDE_MASK));
 	if (i == m_hotKeyToIDMap.end()) {
 		return false;
 	}

@@ -353,7 +353,11 @@ void EiScreen::enter()
 #endif
 }
 
-bool EiScreen::leave()
+bool EiScreen::canLeave() {
+    return true;
+}
+
+void EiScreen::leave()
 {
     if (!is_primary_) {
         if (ei_pointer_) {
@@ -368,7 +372,6 @@ bool EiScreen::leave()
     }
 
     is_on_screen_ = false;
-    return true;
 }
 
 bool EiScreen::setClipboard(ClipboardID id, const IClipboard* clipboard)
@@ -631,16 +634,12 @@ void EiScreen::on_pointer_scroll_event(ei_event* event)
     dx += remainder->x;
     dy += remainder->y;
 
-    LOG_DEBUG1("event: after remainder (%.2f, %.2f)", dx, dy);
-
     double x, y;
     double rx = modf(dx, &x);
     double ry = modf(dy, &y);
 
     assert(!std::isnan(x) && !std::isinf(x));
     assert(!std::isnan(y) && !std::isinf(y));
-
-    LOG_DEBUG1("event: xy is (%.2f, %.2f)", x, y);
 
     // libEI and InputLeap seem to use opposite directions, so we have
     // to send the opposite of the value reported by EI if we want to
@@ -652,7 +651,6 @@ void EiScreen::on_pointer_scroll_event(ei_event* event)
 
     remainder->x = rx;
     remainder->y = ry;
-    LOG_DEBUG1("event: remainder is (%.2f, %.2f)", x, y);
 }
 
 void EiScreen::on_pointer_scroll_discrete_event(ei_event* event)

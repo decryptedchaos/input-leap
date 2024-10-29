@@ -56,6 +56,8 @@
 #include <Windows.h>
 #endif
 
+#include <signal.h>
+
 namespace {
 
 static const QString allFilesFilter(QObject::tr("All files (*.*)"));
@@ -78,18 +80,18 @@ const char* icon_file_for_connection_state(AppConnectionState state)
 #if defined(Q_OS_MAC)
     switch (state) {
         default:
-        case AppConnectionState::DISCONNECTED: return ":/res/icons/32x32/input-leap-disconnected-mask.png";
-        case AppConnectionState::CONNECTING:   return ":/res/icons/32x32/input-leap-disconnected-mask.png";
-        case AppConnectionState::CONNECTED:    return ":/res/icons/32x32/input-leap-connected-mask.png";
-        case AppConnectionState::TRANSFERRING: return ":/res/icons/32x32/input-leap-transfering-mask.png";
+        case AppConnectionState::DISCONNECTED: return ":/res/icons/128x128/input-leap-disconnected-mask.png";
+        case AppConnectionState::CONNECTING:   return ":/res/icons/128x128/input-leap-disconnected-mask.png";
+        case AppConnectionState::CONNECTED:    return ":/res/icons/128x128/input-leap-connected-mask.png";
+        case AppConnectionState::TRANSFERRING: return ":/res/icons/128x128/input-leap-transfering-mask.png";
     }
 #else
     switch (state) {
         default:
-        case AppConnectionState::DISCONNECTED: return ":/res/icons/16x16/input-leap-disconnected.png";
-        case AppConnectionState::CONNECTING:   return ":/res/icons/16x16/input-leap-disconnected.png";
-        case AppConnectionState::CONNECTED:    return ":/res/icons/16x16/input-leap-connected.png";
-        case AppConnectionState::TRANSFERRING: return ":/res/icons/16x16/input-leap-transfering.png";
+        case AppConnectionState::DISCONNECTED: return ":/res/icons/128x128/input-leap-disconnected.png";
+        case AppConnectionState::CONNECTING:   return ":/res/icons/128x128/input-leap-disconnected.png";
+        case AppConnectionState::CONNECTED:    return ":/res/icons/128x128/input-leap-connected.png";
+        case AppConnectionState::TRANSFERRING: return ":/res/icons/128x128/input-leap-transfering.png";
     }
 #endif
 }
@@ -105,7 +107,7 @@ const char* icon_name_for_connection_state(AppConnectionState state)
     }
 }
 
-static const char* APP_LARGE_ICON = ":/res/icons/256x256/input-leap.ico";
+static const char* APP_LARGE_ICON = ":/res/icons/256x256/input-leap.png";
 
 } // namespace
 
@@ -172,6 +174,7 @@ MainWindow::MainWindow(QSettings& settings, AppConfig& appConfig) :
 
     ui_->m_pComboServerList->hide();
     ui_->m_pLabelPadlock->hide();
+    ui_->m_pLabelPadlock->setPixmap(QPixmap(":/res/icons/64x64/padlock.png").scaledToHeight(fontMetrics().height() * 1.5, Qt::SmoothTransformation));
     ui_->frame_fingerprint_details->hide();
 
     updateSSLFingerprint();
@@ -272,8 +275,14 @@ void MainWindow::createTrayIcon()
 
 void MainWindow::retranslateMenuBar()
 {
+#ifndef Q_OS_DARWIN
     main_menu_->setTitle(tr("&InputLeap"));
     m_pMenuHelp->setTitle(tr("&Help"));
+#else
+    m_pMenuHelp->setTitle(tr("&File"));
+    main_menu_->setTitle(tr("&Window"));
+#endif
+
 }
 
 void MainWindow::createMenuBar()
@@ -283,17 +292,29 @@ void MainWindow::createMenuBar()
     m_pMenuHelp = new QMenu("", m_pMenuBar);
     retranslateMenuBar();
 
+#ifndef Q_OS_DARWIN
     m_pMenuBar->addAction(main_menu_->menuAction());
     m_pMenuBar->addAction(m_pMenuHelp->menuAction());
+#else
+    m_pMenuBar->addAction(m_pMenuHelp->menuAction());
+    m_pMenuBar->addAction(main_menu_->menuAction());
+#endif
 
     main_menu_->addAction(ui_->m_pActionShowLog);
     main_menu_->addAction(ui_->m_pActionSettings);
     main_menu_->addAction(ui_->m_pActionMinimize);
     main_menu_->addSeparator();
+
+#ifndef Q_OS_DARWIN
     main_menu_->addAction(ui_->m_pActionSave);
+#endif
     main_menu_->addSeparator();
     main_menu_->addAction(ui_->m_pActionQuit);
     m_pMenuHelp->addAction(ui_->m_pActionAbout);
+
+#ifdef Q_OS_DARWIN
+    m_pMenuHelp->addAction(ui_->m_pActionSave);
+#endif
 
     setMenuBar(m_pMenuBar);
 }

@@ -301,8 +301,19 @@ MSWindowsScreen::enter()
     forceShowCursor();
 }
 
-bool
-MSWindowsScreen::leave()
+bool MSWindowsScreen::canLeave() {
+  POINT pos;
+  if (!GetCursorPos(&pos)) {
+    LOG_DEBUG ("unable to leave screen as windows security has disabled critical functions");
+    // unable to get position this means inputleap will break if the cursor
+    // leaves the screen
+    return false;
+  }
+
+  return true;
+}
+
+void MSWindowsScreen::leave()
 {
     // get keyboard layout of foreground window.  we'll use this
     // keyboard layout for translating keys sent to clients.
@@ -350,8 +361,6 @@ MSWindowsScreen::leave()
     if (isDraggingStarted() && !m_isPrimary) {
         m_sendDragThread = new Thread([this](){ send_drag_thread(); });
     }
-
-    return true;
 }
 
 void MSWindowsScreen::send_drag_thread()
@@ -385,7 +394,7 @@ MSWindowsScreen::setClipboard(ClipboardID, const IClipboard* src)
         if (!dst.open(0)) {
             return false;
         }
-        dst.empty();
+        dst.clear();
         dst.close();
         return true;
     }
@@ -617,7 +626,7 @@ std::uint32_t MSWindowsScreen::registerHotKey(KeyID key, KeyModifierMask mask)
 void MSWindowsScreen::unregisterHotKey(std::uint32_t id)
 {
     // look up hotkey
-    HotKeyMap::iterator i = m_hotKeys.find(id);
+    auto i = m_hotKeys.find(id);
     if (i == m_hotKeys.end()) {
         return;
     }
@@ -1094,7 +1103,7 @@ MSWindowsScreen::onKey(WPARAM wParam, LPARAM lParam)
     m_keyState->onKey(button, down, oldState);
 
     if (!down && m_isPrimary && !m_isOnScreen) {
-        PrimaryKeyDownList::iterator find = std::find(m_primaryKeyDownList.begin(), m_primaryKeyDownList.end(), button);
+        auto find = std::find(m_primaryKeyDownList.begin(), m_primaryKeyDownList.end(), button);
         if (find != m_primaryKeyDownList.end()) {
             LOG_DEBUG1("release key button %d on primary", *find);
             m_hook.setMode(kHOOK_WATCH_JUMP_ZONE);
@@ -1209,8 +1218,7 @@ MSWindowsScreen::onHotKey(WPARAM wParam, LPARAM lParam)
     }
 
     // find the hot key id
-    HotKeyToIDMap::const_iterator i =
-        m_hotKeyToIDMap.find(HotKeyItem(virtKey, modifiers));
+    auto i = m_hotKeyToIDMap.find(HotKeyItem(virtKey, modifiers));
     if (i == m_hotKeyToIDMap.end()) {
         return false;
     }

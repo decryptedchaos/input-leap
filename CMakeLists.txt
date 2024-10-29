@@ -15,18 +15,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.21)
 project(InputLeap C CXX)
 
 option(INPUTLEAP_BUILD_GUI "Build the GUI" ON)
-option(INPUTLEAP_BUILD_INSTALLER "Build the installer" ON)
 option(INPUTLEAP_BUILD_TESTS "Build the tests" ON)
 option(INPUTLEAP_USE_EXTERNAL_GTEST "Use external installation of Google Test framework" OFF)
 option(INPUTLEAP_BUILD_X11 "Build with XWindows support" ON)
 option(INPUTLEAP_BUILD_LIBEI "Build with libei support" OFF)
-option(INPUTLEAP_DEPLOY_FLATPAK_SCRIPT "Deploy Flatpak script [Experimental]" OFF)
+option(INPUTLEAP_BUILD_GULRAK_FILESYSTEM "Use internal filesystem library" OFF)
 set (CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set (CMAKE_CXX_STANDARD 14)
 set (CMAKE_CXX_EXTENSIONS OFF)
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 set (CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -38,6 +36,12 @@ endif()
 
 if(NOT QT_DEFAULT_MAJOR_VERSION)
     set(QT_DEFAULT_MAJOR_VERSION 6)
+endif()
+
+if(QT_DEFAULT_MAJOR_VERSION EQUAL 6)
+    set(CMAKE_CXX_STANDARD 17)
+else()
+    set(CMAKE_CXX_STANDARD 14)
 endif()
 
 include (cmake/Version.cmake)
@@ -74,16 +78,16 @@ if (INPUTLEAP_BUILD_GUI)
     find_package(Qt${QT_DEFAULT_MAJOR_VERSION} COMPONENTS Core REQUIRED)
     get_target_property(qmake_executable Qt${QT_DEFAULT_MAJOR_VERSION}::qmake IMPORTED_LOCATION)
     get_filename_component(_qt_bin_dir "${qmake_executable}" DIRECTORY)
-    if(WIN32 OR APPLE)
-        if(WIN32)
-            set(deployqtapp windeployqt)
-        elseif(APPLE)
-            set(deployqtapp macdeployqt)
-            find_library(QT_PLATFORM_PLUGIN libqcocoa.dylib HINTS "${_qt_bin_dir}../plugins/platforms")
-        endif()
+    if(WIN32)
+        set(deployqtapp windeployqt)
+        find_program(QT_DEPLOY_TOOL ${deployqtapp} HINTS "${_qt_bin_dir}")
+    elseif(APPLE)
+        set(deployqtapp macdeployqt)
+        find_library(QT_PLATFORM_PLUGIN libqcocoa.dylib HINTS "${_qt_bin_dir}../plugins/platforms")
         find_program(QT_DEPLOY_TOOL ${deployqtapp} HINTS "${_qt_bin_dir}")
     endif()
 endif()
+add_definitions(-DINPUTLEAP_USE_GULRAK_FILESYSTEM=$<BOOL:${INPUTLEAP_BUILD_GULRAK_FILESYSTEM}>)
 if (UNIX)
     if (NOT APPLE)
         set (CMAKE_POSITION_INDEPENDENT_CODE TRUE)
@@ -109,16 +113,6 @@ if (UNIX)
     set (THREADS_PREFER_PTHREAD_FLAG TRUE)
     find_package (Threads REQUIRED)
     list (APPEND libs Threads::Threads)
-
-    # curl is used on both Linux and Mac
-    find_package (CURL)
-    if (CURL_FOUND)
-        include_directories(${CURL_INCLUDE_DIRS})
-        list (APPEND libs ${CURL_LIBRARIES})
-
-    else()
-        message (FATAL_ERROR "Missing library: curl")
-    endif()
 
     if (APPLE)
         set (CMAKE_CXX_FLAGS "--sysroot ${CMAKE_OSX_SYSROOT} ${CMAKE_CXX_FLAGS} -DGTEST_USE_OWN_TR1_TUPLE=1")
@@ -199,14 +193,6 @@ if (UNIX)
                 int main() { XdpOutputType out = XDP_OUTPUT_NONE; }
             " HAVE_LIBPORTAL_OUTPUT_NONE)
             cmake_pop_check_state()
-
-            if(INPUTLEAP_DEPLOY_FLATPAK_SCRIPT)
-                # Flatpak bits
-                install(FILES "dist/flatpak/input-leap-flatpak"
-                        DESTINATION bin
-                        PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-                )
-            endif()
         endif()
 
         check_include_files ("dns_sd.h" HAVE_DNSSD)
@@ -260,9 +246,6 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     set (BUILD_MSWINDOWS 1)
 endif()
 
-# For config.h, save the results based on a template (config.h.in).
-configure_file(res/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/src/lib/config.h)
-
 include_directories(SYSTEM "${CMAKE_SOURCE_DIR}/ext/gulrak-filesystem/include")
 
 #
@@ -303,11 +286,8 @@ macro (configure_files srcDir destDir)
     endforeach (templateFile)
 endmacro (configure_files)
 
-if (${INPUTLEAP_BUILD_INSTALLER})
-#
-# macOS app Bundle
-#
-if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+# Make a bundle for mac os
+if (APPLE)
     set (CMAKE_INSTALL_RPATH "@loader_path/../Libraries;@loader_path/../Frameworks")
     set(INPUTLEAP_BUNDLE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dist/macos/bundle)
     set(INPUTLEAP_BUNDLE_DIR ${CMAKE_BINARY_DIR}/bundle)
@@ -320,10 +300,18 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
                       bash build_dist.sh
                       DEPENDS input-leap input-leaps input-leapc
                       WORKING_DIRECTORY ${INPUTLEAP_BUNDLE_DIR})
+elseif (UNIX AND NOT APPLE)
+    install(FILES doc/input-leapc.1 doc/input-leaps.1 DESTINATION share/man/man1)
+
+    install(FILES res/io.github.input_leap.InputLeap.appdata.xml DESTINATION share/metainfo)
+
+    configure_files (${CMAKE_CURRENT_SOURCE_DIR}/dist/rpm ${CMAKE_BINARY_DIR}/rpm)
+    install(FILES res/io.github.input_leap.InputLeap.svg DESTINATION share/icons/hicolor/scalable/apps)
+    install(FILES res/io.github.input_leap.InputLeap.desktop DESTINATION share/applications)
 endif()
 
 #
-# Windows installer
+# Windows Installer
 #
 if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
         set(INPUTLEAP_WIX_VERSION "${INPUTLEAP_VERSION_MAJOR}.${INPUTLEAP_VERSION_MINOR}.${INPUTLEAP_VERSION_PATCH}")
@@ -331,25 +319,6 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
         configure_files (${CMAKE_CURRENT_SOURCE_DIR}/dist/wix ${CMAKE_BINARY_DIR}/installer-wix)
         message (STATUS "Configuring the inno installer")
         configure_files (${CMAKE_CURRENT_SOURCE_DIR}/dist/inno ${CMAKE_BINARY_DIR}/installer-inno)
-endif()
-
-#
-# Linux installation
-#
-if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-    install(FILES doc/input-leapc.1 doc/input-leaps.1 DESTINATION share/man/man1)
-
-    configure_file(res/io.github.input_leap.InputLeap.appdata.xml.in
-        ${CMAKE_CURRENT_BINARY_DIR}/res/io.github.input_leap.InputLeap.appdata.xml)
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/res/io.github.input_leap.InputLeap.appdata.xml DESTINATION share/metainfo)
-
-    configure_files (${CMAKE_CURRENT_SOURCE_DIR}/dist/rpm ${CMAKE_BINARY_DIR}/rpm)
-    install(FILES res/io.github.input_leap.InputLeap.svg DESTINATION share/icons/hicolor/scalable/apps)
-    install(FILES res/io.github.input_leap.InputLeap.desktop DESTINATION share/applications)
-endif()
-
-else()
-    message (STATUS "NOT configuring the installer")
 endif()
 
 #

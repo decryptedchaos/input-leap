@@ -44,6 +44,7 @@
 #include "base/Log.h"
 #include "base/Time.h"
 
+#include <climits>
 #include <cstring>
 #include <cstdlib>
 #include <sstream>
@@ -68,7 +69,7 @@ Server::Server(
 	m_xDelta2(0),
 	m_yDelta2(0),
 	m_config(&config),
-	m_inputFilter(config.getInputFilter()),
+    input_filter_(events),
 	m_activeSaver(nullptr),
 	m_switchDir(kNoDirection),
 	m_switchScreen(nullptr),
@@ -95,6 +96,8 @@ Server::Server(
 	m_waitDragInfoThread(true),
 	m_args(args)
 {
+    input_filter_.add_rules(config.get_input_filter_rules());
+
 	// must have a primary client and it must have a canonical name
 	assert(m_primaryClient != nullptr);
 	assert(config.isScreen(primaryClient->getName()));
@@ -108,7 +111,7 @@ Server::Server(
 		clipboard.m_clipboardOwner  = primaryName;
 		clipboard.m_clipboardSeqNum = m_seqNum;
 		if (clipboard.m_clipboard.open(0)) {
-			clipboard.m_clipboard.empty();
+			clipboard.m_clipboard.clear();
 			clipboard.m_clipboard.close();
 		}
 		clipboard.m_clipboardData   = clipboard.m_clipboard.marshall();
@@ -117,15 +120,15 @@ Server::Server(
     // install event handlers
     m_events->add_handler(EventType::TIMER, this,
                           [this](const auto& e){ handle_switch_wait_event(); });
-    m_events->add_handler(EventType::KEY_STATE_KEY_DOWN, m_inputFilter,
+    m_events->add_handler(EventType::KEY_STATE_KEY_DOWN, &input_filter_,
                           [this](const auto& e){ handle_key_down_event(e); });
-    m_events->add_handler(EventType::KEY_STATE_KEY_UP, m_inputFilter,
+    m_events->add_handler(EventType::KEY_STATE_KEY_UP, &input_filter_,
                           [this](const auto& e){ handle_key_up_event(e); });
-    m_events->add_handler(EventType::KEY_STATE_KEY_REPEAT, m_inputFilter,
+    m_events->add_handler(EventType::KEY_STATE_KEY_REPEAT, &input_filter_,
                           [this](const auto& e){ handle_key_repeat_event(e); });
-    m_events->add_handler(EventType::PRIMARY_SCREEN_BUTTON_DOWN, m_inputFilter,
+    m_events->add_handler(EventType::PRIMARY_SCREEN_BUTTON_DOWN, &input_filter_,
                           [this](const auto& e){ handle_button_down_event(e); });
-    m_events->add_handler(EventType::PRIMARY_SCREEN_BUTTON_UP, m_inputFilter,
+    m_events->add_handler(EventType::PRIMARY_SCREEN_BUTTON_UP, &input_filter_,
                           [this](const auto& e){ handle_button_up_event(e); });
     m_events->add_handler(EventType::PRIMARY_SCREEN_MOTION_ON_PRIMARY,
                           m_primaryClient->get_event_target(),
@@ -142,19 +145,19 @@ Server::Server(
     m_events->add_handler(EventType::PRIMARY_SCREEN_SAVER_DEACTIVATED,
                           m_primaryClient->get_event_target(),
                           [this](const auto& e){ handle_screensaver_deactivated_event(); });
-    m_events->add_handler(EventType::SERVER_SWITCH_TO_SCREEN, m_inputFilter,
+    m_events->add_handler(EventType::SERVER_SWITCH_TO_SCREEN, &input_filter_,
                           [this](const auto& e){ handle_switch_to_screen_event(e); });
-    m_events->add_handler(EventType::SERVER_TOGGLE_SCREEN, m_inputFilter,
+    m_events->add_handler(EventType::SERVER_TOGGLE_SCREEN, &input_filter_,
                           [this](const auto& e){ handle_toggle_screen_event(e); });
-    m_events->add_handler(EventType::SERVER_SWITCH_INDIRECTION, m_inputFilter,
+    m_events->add_handler(EventType::SERVER_SWITCH_INDIRECTION, &input_filter_,
                           [this](const auto& e){ handle_switch_in_direction_event(e); });
-    m_events->add_handler(EventType::SERVER_KEYBOARD_BROADCAST, m_inputFilter,
+    m_events->add_handler(EventType::SERVER_KEYBOARD_BROADCAST, &input_filter_,
                           [this](const auto& e){ handle_keyboard_broadcast_event(e); });
-    m_events->add_handler(EventType::SERVER_LOCK_CURSOR_TO_SCREEN, m_inputFilter,
+    m_events->add_handler(EventType::SERVER_LOCK_CURSOR_TO_SCREEN, &input_filter_,
                           [this](const auto& e){ handle_lock_cursor_to_screen_event(e); });
-    m_events->add_handler(EventType::PRIMARY_SCREEN_FAKE_INPUT_BEGIN, m_inputFilter,
+    m_events->add_handler(EventType::PRIMARY_SCREEN_FAKE_INPUT_BEGIN, &input_filter_,
                           [this](const auto& e){ handle_fake_input_begin_event(); });
-    m_events->add_handler(EventType::PRIMARY_SCREEN_FAKE_INPUT_END, m_inputFilter,
+    m_events->add_handler(EventType::PRIMARY_SCREEN_FAKE_INPUT_END, &input_filter_,
                           [this](const auto& e){ handle_fake_input_end_event(); });
 
     if (m_args.m_enableDragDrop) {
@@ -172,7 +175,7 @@ Server::Server(
 
 	// enable primary client
 	m_primaryClient->enable();
-	m_inputFilter->setPrimaryClient(m_primaryClient);
+    input_filter_.setPrimaryClient(m_primaryClient);
 
 	// Determine if scroll lock is already set. If so, lock the cursor to the primary screen
 	if (m_primaryClient->getToggleMask() & KeyModifierScrollLock) {
@@ -189,25 +192,24 @@ Server::~Server()
 	}
 
 	// remove event handlers and timers
-    m_events->remove_handler(EventType::KEY_STATE_KEY_DOWN, m_inputFilter);
-    m_events->remove_handler(EventType::KEY_STATE_KEY_UP, m_inputFilter);
-    m_events->remove_handler(EventType::KEY_STATE_KEY_REPEAT, m_inputFilter);
-    m_events->remove_handler(EventType::PRIMARY_SCREEN_BUTTON_DOWN, m_inputFilter);
-    m_events->remove_handler(EventType::PRIMARY_SCREEN_BUTTON_UP, m_inputFilter);
+    m_events->remove_handler(EventType::KEY_STATE_KEY_DOWN, &input_filter_);
+    m_events->remove_handler(EventType::KEY_STATE_KEY_UP, &input_filter_);
+    m_events->remove_handler(EventType::KEY_STATE_KEY_REPEAT, &input_filter_);
+    m_events->remove_handler(EventType::PRIMARY_SCREEN_BUTTON_DOWN, &input_filter_);
+    m_events->remove_handler(EventType::PRIMARY_SCREEN_BUTTON_UP, &input_filter_);
     m_events->remove_handler(EventType::PRIMARY_SCREEN_MOTION_ON_PRIMARY, m_primaryClient->get_event_target());
     m_events->remove_handler(EventType::PRIMARY_SCREEN_MOTION_ON_SECONDARY, m_primaryClient->get_event_target());
     m_events->remove_handler(EventType::PRIMARY_SCREEN_WHEEL, m_primaryClient->get_event_target());
     m_events->remove_handler(EventType::PRIMARY_SCREEN_SAVER_ACTIVATED, m_primaryClient->get_event_target());
     m_events->remove_handler(EventType::PRIMARY_SCREEN_SAVER_DEACTIVATED, m_primaryClient->get_event_target());
-    m_events->remove_handler(EventType::PRIMARY_SCREEN_FAKE_INPUT_BEGIN, m_inputFilter);
-    m_events->remove_handler(EventType::PRIMARY_SCREEN_FAKE_INPUT_END, m_inputFilter);
+    m_events->remove_handler(EventType::PRIMARY_SCREEN_FAKE_INPUT_BEGIN, &input_filter_);
+    m_events->remove_handler(EventType::PRIMARY_SCREEN_FAKE_INPUT_END, &input_filter_);
     m_events->remove_handler(EventType::TIMER, this);
 	stopSwitch();
 
 	// force immediate disconnection of secondary clients
 	disconnect();
-	for (OldClients::iterator index = m_oldClients.begin();
-							index != m_oldClients.end(); ++index) {
+    for (auto index = m_oldClients.begin(); index != m_oldClients.end(); ++index) {
 		BaseClientProxy* client = index->first;
 		m_events->deleteTimer(index->second);
         m_events->remove_handler(EventType::TIMER, client);
@@ -216,7 +218,7 @@ Server::~Server()
 	}
 
 	// remove input filter
-	m_inputFilter->setPrimaryClient(nullptr);
+    input_filter_.setPrimaryClient(nullptr);
 
 	// disable and disconnect primary client
 	m_primaryClient->disable();
@@ -247,17 +249,17 @@ Server::setConfig(const Config& config)
 	// ScrollLock as a hotkey.
 	if (!m_config->hasLockToScreenAction()) {
         IPlatformScreen::KeyInfo key{kKeyScrollLock, 0, 0, 0};
-		InputFilter::Rule rule(new InputFilter::KeystrokeCondition(m_events, key));
-		rule.adoptAction(new InputFilter::LockCursorToScreenAction(m_events), true);
-		m_inputFilter->addFilterRule(rule);
+        InputFilter::Rule rule(new InputFilter::KeystrokeCondition(key));
+        rule.adoptAction(new InputFilter::LockCursorToScreenAction(), true);
+        m_config->get_input_filter_rules().push_back(rule);
+        input_filter_.addFilterRule(rule);
 	}
 
 	// tell primary screen about reconfiguration
 	m_primaryClient->reconfigure(getActivePrimarySides());
 
 	// tell all (connected) clients about current options
-	for (ClientList::const_iterator index = m_clients.begin();
-								index != m_clients.end(); ++index) {
+    for (auto index = m_clients.begin(); index != m_clients.end(); ++index) {
 		BaseClientProxy* client = index->second;
 		sendOptions(client);
 	}
@@ -309,7 +311,7 @@ Server::disconnect()
 {
 	// close all secondary clients
 	if (m_clients.size() > 1 || !m_oldClients.empty()) {
-		Config emptyConfig(m_events);
+        Config emptyConfig;
 		closeClients(emptyConfig);
 	}
 	else {
@@ -326,8 +328,7 @@ void
 Server::getClients(std::vector<std::string>& list) const
 {
 	list.clear();
-	for (ClientList::const_iterator index = m_clients.begin();
-							index != m_clients.end(); ++index) {
+    for (auto index = m_clients.begin(); index != m_clients.end(); ++index) {
 		list.push_back(index->first);
 	}
 }
@@ -576,7 +577,7 @@ BaseClientProxy* Server::getNeighbor(BaseClientProxy* src, EDirection dir, std::
 
 		// look up neighbor cell.  if the screen is connected and
 		// ready then we can stop.
-		ClientList::const_iterator index = m_clients.find(dstName);
+        auto index = m_clients.find(dstName);
 		if (index != m_clients.end()) {
 			LOG_DEBUG2("\"%s\" is on %s of \"%s\" at %f", dstName.c_str(), Config::dirName(dir), srcName.c_str(), t);
 			mapToPixel(index->second, dir, tTmp, x, y);
@@ -807,8 +808,7 @@ bool Server::isSwitchOkay(BaseClientProxy* newScreen, EDirection dir, std::int32
 	}
 	if (options != nullptr && options->count(kOptionScreenSwitchCorners) > 0) {
 		// get corner mask and size
-		Config::ScreenOptions::const_iterator i =
-			options->find(kOptionScreenSwitchCorners);
+        auto i = options->find(kOptionScreenSwitchCorners);
         std::uint32_t corners = static_cast<std::uint32_t>(i->second);
 		i = options->find(kOptionScreenSwitchCornerSize);
 		std::int32_t size = 0;
@@ -1052,8 +1052,7 @@ Server::sendOptions(BaseClientProxy* client) const
 	if (options != nullptr) {
 		// convert options to a more convenient form for sending
 		optionsList.reserve(2 * options->size());
-		for (Config::ScreenOptions::const_iterator index = options->begin();
-									index != options->end(); ++index) {
+        for (auto index = options->begin(); index != options->end(); ++index) {
 			optionsList.push_back(index->first);
             optionsList.push_back(static_cast<std::uint32_t>(index->second));
 		}
@@ -1064,8 +1063,7 @@ Server::sendOptions(BaseClientProxy* client) const
 	if (options != nullptr) {
 		// convert options to a more convenient form for sending
 		optionsList.reserve(optionsList.size() + 2 * options->size());
-		for (Config::ScreenOptions::const_iterator index = options->begin();
-									index != options->end(); ++index) {
+        for (auto index = options->begin(); index != options->end(); ++index) {
 			optionsList.push_back(index->first);
             optionsList.push_back(static_cast<std::uint32_t>(index->second));
 		}
@@ -1089,8 +1087,7 @@ Server::processOptions()
 	m_switchNeedsAlt = false;		// doesn't work correct.
 
 	bool newRelativeMoves = m_relativeMoves;
-	for (Config::ScreenOptions::const_iterator index = options->begin();
-								index != options->end(); ++index) {
+    for (auto index = options->begin(); index != options->end(); ++index) {
 		const OptionID id       = index->first;
 		const OptionValue value = index->second;
 		if (id == kOptionScreenSwitchDelay) {
@@ -1202,15 +1199,14 @@ void Server::handle_clipboard_grabbed(const Event& event, BaseClientProxy* grabb
 
 	// clear the clipboard data (since it's not known at this point)
 	if (clipboard.m_clipboard.open(0)) {
-		clipboard.m_clipboard.empty();
+		clipboard.m_clipboard.clear();
 		clipboard.m_clipboard.close();
 	}
 	clipboard.m_clipboardData = clipboard.m_clipboard.marshall();
 
 	// tell all other screens to take ownership of clipboard.  tell the
 	// grabber that it's clipboard isn't dirty.
-	for (ClientList::iterator index = m_clients.begin();
-								index != m_clients.end(); ++index) {
+    for (auto index = m_clients.begin(); index != m_clients.end(); ++index) {
 		BaseClientProxy* client = index->second;
 		if (client == grabber) {
             client->setClipboardDirty(info.m_id, false);
@@ -1325,7 +1321,7 @@ void Server::handle_switch_to_screen_event(const Event& event)
 {
     const auto& info = event.get_data_as<SwitchToScreenInfo>();
 
-    ClientList::const_iterator index = m_clients.find(info.m_screen);
+    auto index = m_clients.find(info.m_screen);
 	if (index == m_clients.end()) {
         LOG_DEBUG1("screen \"%s\" not active", info.m_screen.c_str());
 	}
@@ -1340,7 +1336,7 @@ Server::handle_toggle_screen_event(const Event& event)
     (void) event;
 
   std::string current = getName(m_active);
-  ClientList::const_iterator index = m_clients.find(current);
+  auto index = m_clients.find(current);
   if (index == m_clients.end()) {
     LOG_DEBUG1("screen \"%s\" not active", current.c_str());
   }
@@ -1491,8 +1487,7 @@ void Server::onClipboardChanged(BaseClientProxy* sender, ClipboardID id, std::ui
 	clipboard.m_clipboardData = data;
 
 	// tell all clients except the sender that the clipboard is dirty
-	for (ClientList::const_iterator index = m_clients.begin();
-								index != m_clients.end(); ++index) {
+    for (auto index = m_clients.begin(); index != m_clients.end(); ++index) {
 		BaseClientProxy* client = index->second;
 		client->setClipboardDirty(id, client != sender);
 	}
@@ -1549,8 +1544,7 @@ Server::onScreensaver(bool activated)
 	}
 
 	// send message to all clients
-	for (ClientList::const_iterator index = m_clients.begin();
-								index != m_clients.end(); ++index) {
+    for (auto index = m_clients.begin(); index != m_clients.end(); ++index) {
 		BaseClientProxy* client = index->second;
 		client->screensaver(activated);
 	}
@@ -1574,8 +1568,7 @@ Server::onKeyDown(KeyID id, KeyModifierMask mask, KeyButton button,
 				screens = "*";
 			}
 		}
-		for (ClientList::const_iterator index = m_clients.begin();
-								index != m_clients.end(); ++index) {
+        for (auto index = m_clients.begin(); index != m_clients.end(); ++index) {
 			if (IKeyState::KeyInfo::contains(screens, index->first)) {
 				index->second->keyDown(id, mask, button);
 			}
@@ -1601,8 +1594,7 @@ Server::onKeyUp(KeyID id, KeyModifierMask mask, KeyButton button,
 				screens = "*";
 			}
 		}
-		for (ClientList::const_iterator index = m_clients.begin();
-								index != m_clients.end(); ++index) {
+        for (auto index = m_clients.begin(); index != m_clients.end(); ++index) {
 			if (IKeyState::KeyInfo::contains(screens, index->first)) {
 				index->second->keyUp(id, mask, button);
 			}
@@ -2051,7 +2043,7 @@ bool
 Server::removeClient(BaseClientProxy* client)
 {
 	// return false if not in list
-	ClientSet::iterator i = m_clientSet.find(client);
+    auto i = m_clientSet.find(client);
 	if (i == m_clientSet.end()) {
 		return false;
 	}
@@ -2113,8 +2105,7 @@ Server::closeClients(const Config& config)
 	// from the configuration (or who's canonical name is changing).
 	typedef std::set<BaseClientProxy*> RemovedClients;
 	RemovedClients removed;
-	for (ClientList::iterator index = m_clients.begin();
-								index != m_clients.end(); ++index) {
+    for (auto index = m_clients.begin(); index != m_clients.end(); ++index) {
 		if (!config.isCanonicalName(index->first)) {
 			removed.insert(index->second);
 		}
@@ -2125,8 +2116,7 @@ Server::closeClients(const Config& config)
 
 	// now close them.  we collect the list then close in two steps
 	// because closeClient() modifies the collection we iterate over.
-	for (RemovedClients::iterator index = removed.begin();
-								index != removed.end(); ++index) {
+    for (auto index = removed.begin(); index != removed.end(); ++index) {
 		closeClient(*index, kMsgCClose);
 	}
 }
@@ -2146,7 +2136,7 @@ Server::removeActiveClient(BaseClientProxy* client)
 void
 Server::removeOldClient(BaseClientProxy* client)
 {
-	OldClients::iterator i = m_oldClients.find(client);
+    auto i = m_oldClients.find(client);
 	if (i != m_oldClients.end()) {
         m_events->remove_handler(EventType::CLIENT_PROXY_DISCONNECTED, client);
         m_events->remove_handler(EventType::TIMER, i->second);
